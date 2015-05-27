@@ -29,17 +29,20 @@ Puppet::Type.type(:remote_file).provide(:ruby, :parent => Puppet::Provider::Remo
   # Returns the mtime of the remote source.
   #
   def remote_mtime
-    return @remote_mtime if @remote_mtime
-    src = URI.parse(@resource[:source])
-    case src.scheme
-    when /https?/
-      response = http_head(src)
-      if !response.header['last-modified']
-        raise Puppet::Error.new "#{src} does not provide last-modified header"
-      end
-      @remote_mtime = Time.parse(response.header['last-modified'])
-    else
-      raise Puppet::Error.new "Unable to ensure latest on #{src}"
+    begin
+      @remote_mtime ||= Time.parse(http_header['last-modified'])
+    rescue
+      raise Puppet::Error.new "Unable to ensure latest on #{@resource[:source]}"
+    end
+  end
+
+  # Returns the size of the remote source.
+  #
+  def remote_size
+    begin
+      @remote_size ||= http_header['content-length']
+    rescue
+      raise Puppet::Error.new "Unable to ensure latest on #{@resource[:source]}"
     end
   end
 
@@ -50,6 +53,19 @@ Puppet::Type.type(:remote_file).provide(:ruby, :parent => Puppet::Provider::Remo
   end
 
   private
+
+  # Returns the http(s) header object for a HEAD request to @resource[:source].
+  #
+  def http_header
+    return @http_header if @http_header
+    src = URI.parse(@resource[:source])
+    case src.scheme
+    when /https?/
+      @http_header = http_head(src).response
+    else
+      raise Puppet::Error.new "Unable to fetch header for #{src}"
+    end
+  end
 
   # Perform a validation of the checksum.
   # Raise if the checksum is found to be inconsistent.
